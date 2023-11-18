@@ -101,7 +101,7 @@ LEFT JOIN intellilens.stage_currency_exchange ce
 ----------------------------------------------------------------------------------------
 
 ------------------ profile
-
+CREATE OR REPLACE TABLE intellilens.L2_profile AS
 SELECT
   pr.profile_id
 , pm.name AS profile_name
@@ -115,7 +115,7 @@ LEFT JOIN `lens-public-data.v2_polygon.profile_metadata` pm
   ON pr.profile_id = pm.profile_id
 LEFT JOIN `lens-public-data.v2_polygon.profile_last_logged_in` pl
   ON pl.profile_id = pr.profile_id
-where pr.profile_id in ('0x0f85', '0x010c69', '0x05')
+-- where pr.profile_id in ('0x0f85', '0x010c69', '0x05')
 ;
 
 
@@ -169,9 +169,11 @@ ORDER BY pr.publication_id DESC, pr.block_timestamp DESC
 
 
 ------------------ interaction
+CREATE OR REPLACE TABLE intellilens.L2_interaction AS
 SELECT *
-FROM
+FROM 
 (
+-- comment, mirror, quote  
 SELECT
   prp.publication_id
 , prp.profile_id
@@ -189,7 +191,6 @@ LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
 LEFT JOIN `lens-public-data.v2_polygon.publication_record` prp
   ON prp.publication_id = pr.parent_publication_id
 WHERE pr.parent_publication_id IS NOT NULL
-and pr.parent_publication_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408')
 
 UNION ALL
 
@@ -215,8 +216,6 @@ LEFT JOIN `lens-public-data.v2_polygon.publication_open_action_module` poa
 LEFT JOIN intellilens.stage_v2_publication_collect pc
   ON pc.publication_id = pom.publication_id
 
-where pom.publication_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408', '0x0f85-0x1dc2')
-
 UNION ALL
 
 -- collect v1
@@ -230,29 +229,59 @@ SELECT
   , CAST(NULL AS STRING) AS interaction_app
   , CAST(NULL AS STRING) AS interaction_language
   , CASE WHEN COALESCE(amount, 0) > 0 THEN 'PAID COLLECT' ELSE 'FREE COLLECT' END AS publication_type
-  , pc.amount * COAlESCE(ce.value, 1) AS amount_USD
+  , COALESCE(pc.amount, 0) * COAlESCE(ce.value, 1) AS amount_USD
 FROM intellilens.stage_v1_publication_collect  pc
 LEFT JOIN intellilens.stage_currency_exchange ce
   ON ce.currency = pc.currency
 WHERE pc.collect_date IS NOT NULL
-and post_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408', '0x0f85-0x1dc2')
+
+UNION ALL
+
+SELECT   
+    pre.publication_id
+  , pr.profile_id
+  , CAST(pre.action_at AS DATE) AS interaction_date
+  , CAST(pre.action_at AS TIME) AS interaction_time
+  , pre.actioned_by_profile_id AS profile_id_interaction
+  , CAST(NULL AS STRING) AS publication_id_interaction
+  , CAST(NULL AS STRING) AS interaction_app
+  , CAST(NULL AS STRING) AS interaction_language
+  , pre.type AS publication_type
+  , 0 AS amount_USD
+FROM `lens-public-data.v2_polygon.publication_reaction` pre
+LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
+  ON pr.publication_id = pre.publication_id
+
+UNION ALL
+
+SELECT   
+    CAST(NULL AS STRING) AS publication_id
+  , pme.profile_id
+  , CAST(pme.timestamp AS DATE) AS interaction_date
+  , CAST(pme.timestamp AS TIME) AS interaction_time
+  , pr.profile_id AS profile_id_interaction
+  , pme.publication_id AS publication_id_interaction
+  , pr.app AS interaction_app
+  , pm.language AS interaction_language
+  , 'MENTION' AS publication_type
+  , 0 AS amount_USD
+FROM `lens-public-data.v2_polygon.publication_mention` pme
+LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
+  ON pr.publication_id = pme.publication_id
+LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
+  ON pm.publication_id = pr.publication_id
 )
 ORDER BY publication_id
 ;
 
+-- select *
+-- from intellilens.L2_interaction 
+-- WHERE publication_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408', '0x0f85-0x1dc2', '0x01a2ee-0xf5')
+-- order by publication_id, interaction_date desc
 
-, cmd.referral_fee AS referral_fee_pct
-, cr.referral_id 
+-- todo , cmd.referral_fee AS referral_fee_pct, cr.referral_id 
+-- + referrer to come (currently no data available)
 
-+ like 
-+ referrer
-
-
-publication_mention
-'0x0f85-0x1dc1-DA-3c259bd2'
-
-referrer_profile_id
-publication_referrer
 
 ------------------ handle_history
 SELECT 
