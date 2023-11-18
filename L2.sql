@@ -59,11 +59,13 @@ ORDER BY pp.block_timestamp DESC
 ;
 
 CREATE OR REPLACE TABLE intellilens.stage_currency_exchange AS
-SELECT 'WMATIC' AS currency, 0.8 AS value UNION ALL
-SELECT 'WETH' AS currency, 1939 AS value UNION ALL
-SELECT 'NCT' AS currency, 1.14 AS value UNION ALL
-SELECT 'USDC' AS currency, 1 AS value
+SELECT '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' AS currency_address, 'WMATIC' AS currency, 0.8 AS value, 1000000000000000000 AS factor UNION ALL
+SELECT '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619' AS currency_address, 'WETH' AS currency, 1939 AS value, 1000000000000000000 AS factor UNION ALL
+SELECT '0xD838290e877E0188a4A44700463419ED96c16107' AS currency_address, 'NCT' AS currency, 1.14 AS value, 1000000000000000000 AS factor UNION ALL
+SELECT '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063' AS currency_address, 'DAI' AS currency, 1 AS value, 1000000000000000000 AS factor UNION ALL
+SELECT '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' AS currency_address, 'USDC' AS currency, 1 AS value, 1000000 AS factor
 ;
+
 
 CREATE OR REPLACE TABLE intellilens.stage_v2_publication_collect AS
 SELECT
@@ -114,11 +116,27 @@ SELECT
 , CAST(pl.last_logged_in AS DATE) AS profile_last_logged_in_date
 , CAST(pl.last_logged_in AS TIME) AS profile_last_logged_in_time
 , CAST(pr.block_timestamp AS DATE) AS profile_creation_date
+, total_posts AS profile_posts
+, total_comments AS profile_comments
+, total_mirrors AS profile_mirrors
+, total_quotes AS profile_quotes
+, total_publications AS profile_publications
+, total_reacted AS profile_reacted
+, total_reactions AS profile_reactions
+, total_collects AS profile_collects
+, total_acted AS profile_acted
+, total_followers AS profile_followers
+, total_following AS profile_following
+-- , COALESCE(CAST(pre.raised AS BIGNUMERIC) / COALESCE(ce.factor, 1), 0) * COALESCE(ce.value, 1) AS follow_revenue_USD
 FROM `lens-public-data.v2_polygon.profile_record` pr
 LEFT JOIN `lens-public-data.v2_polygon.profile_metadata` pm
   ON pr.profile_id = pm.profile_id
 LEFT JOIN `lens-public-data.v2_polygon.profile_last_logged_in` pl
   ON pl.profile_id = pr.profile_id
+LEFT JOIN `lens-public-data.v2_polygon.global_stats_profile` gsp
+  ON gsp.profile_id = pr.profile_id
+LEFT JOIN `lens-public-data.v2_polygon.global_stats_profile_follower` gspf
+   ON gspf.profile_id = pr.profile_id
 -- where pr.profile_id in ('0x0f85', '0x010c69', '0x05')
 ;
 
@@ -182,6 +200,22 @@ SELECT *
 , CAST(DATETIME_TRUNC(interaction_date, MONTH) AS DATE) AS interaction_date_year_month
 FROM 
 (
+-- follow
+SELECT
+  CAST(NULL AS STRING) AS publication_id
+, pf.profile_id
+, CAST(pf.block_timestamp AS DATE) AS interaction_date
+, CAST(pf.block_timestamp AS TIME) AS interaction_time
+, pf.profile_follower_id AS interaction_profile_id
+, CAST(NULL AS STRING) AS interaction_publication_id
+, CAST(NULL AS STRING) AS interaction_app
+, CAST(NULL AS STRING) AS interaction_language
+, 'FOLLOW' AS interaction_type
+, 0 AS amount_USD
+FROM `lens-public-data.v2_polygon.profile_follower` pf
+
+UNION ALL
+
 -- comment, mirror, quote  
 SELECT
   prp.publication_id
@@ -246,6 +280,7 @@ WHERE pc.collect_date IS NOT NULL
 
 UNION ALL
 
+-- upvote, downvote
 SELECT   
     pre.publication_id
   , pr.profile_id
@@ -263,6 +298,7 @@ LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
 
 UNION ALL
 
+-- mention
 SELECT   
     CAST(NULL AS STRING) AS publication_id
   , pme.profile_id
@@ -311,6 +347,5 @@ LEFT JOIN `lens-public-data.v2_polygon.namespace_handle_history` nhh
 LEFT JOIN `lens-public-data.v2_polygon.profile_record` pr
   ON nhh.owned_by = pr.owned_by
 WHERE poh.profile_id in ('0x0f85', '0x010c69', '0x05', '0x139f')
--- WHERE handle in ('lens/nftfandome', 'lens/rinfinity')
 ORDER BY poh.profile_id, nhh.handle, nhh.block_timestamp desc
 
