@@ -100,6 +100,10 @@ LEFT JOIN intellilens.stage_currency_exchange ce
 ------------------------------------------ L2 ------------------------------------------
 ----------------------------------------------------------------------------------------
 
+CREATE OR REPLACE TABLE intellilens.L2_date AS
+SELECT date FROM UNNEST(GENERATE_DATE_ARRAY(DATE('2022-01-01'), DATE('2025-12-31'), INTERVAL 1 DAY)) AS date;
+
+
 ------------------ profile
 CREATE OR REPLACE TABLE intellilens.L2_profile AS
 SELECT
@@ -120,7 +124,9 @@ LEFT JOIN `lens-public-data.v2_polygon.profile_last_logged_in` pl
 
 
 ------------------ publication
-CREATE OR REPLACE TABLE intellilens.L2_publication AS
+CREATE OR REPLACE TABLE intellilens.L2_publication 
+PARTITION BY publication_date_year_month
+AS
 SELECT 
   pr.publication_id
 , pr.profile_id
@@ -148,6 +154,7 @@ SELECT
 , gsp.total_bookmarks AS publication_total_bookmarks
 , gsp.total_amount_of_acted  AS publication_total_acted
 , gsp.total_amount_of_comments_gardeners  AS publication_total_comments_gardeners
+, CAST(DATETIME_TRUNC(pr.block_timestamp, MONTH) AS DATE) AS publication_date_year_month
 FROM `lens-public-data.v2_polygon.publication_record` pr
 LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
   ON pm.publication_id = pr.publication_id
@@ -159,7 +166,6 @@ LEFT JOIN (SELECT post_id, currency, SUM(amount) AS amount
   FROM intellilens.stage_v1_publication_collect  pc
   GROUP BY post_id, currency) pc
   ON pc.post_id = pr.publication_id
-ORDER BY pr.publication_id DESC, pr.block_timestamp DESC
 ;
 
 
@@ -169,8 +175,11 @@ ORDER BY pr.publication_id DESC, pr.block_timestamp DESC
 
 
 ------------------ interaction
-CREATE OR REPLACE TABLE intellilens.L2_interaction AS
+CREATE OR REPLACE TABLE intellilens.L2_interaction 
+PARTITION BY interaction_date_year_month
+AS
 SELECT *
+, CAST(DATETIME_TRUNC(interaction_date, MONTH) AS DATE) AS interaction_date_year_month
 FROM 
 (
 -- comment, mirror, quote  
@@ -179,11 +188,11 @@ SELECT
 , prp.profile_id
 , CAST(pr.block_timestamp AS DATE) AS interaction_date
 , CAST(pr.block_timestamp AS TIME) AS interaction_time
-, pr.profile_id AS profile_id_interaction
-, pr.publication_id AS publication_id_interaction
+, pr.profile_id AS interaction_profile_id
+, pr.publication_id AS interaction_publication_id
 , pr.app AS interaction_app
 , pm.language AS interaction_language
-, pr.publication_type
+, pr.publication_type AS interaction_type
 , 0 AS amount_USD
 FROM `lens-public-data.v2_polygon.publication_record` pr
 LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
@@ -200,13 +209,13 @@ SELECT
   , pr.profile_id
   , CAST(pom.block_timestamp AS DATE) AS interaction_date
   , CAST(pom.block_timestamp AS TIME) AS interaction_time
-  , acted_profile_id AS profile_id_interaction
-  , CAST(NULL AS STRING) AS publication_id_interaction
+  , acted_profile_id AS interaction_profile_id
+  , CAST(NULL AS STRING) AS interaction_publication_id
   , CAST(NULL AS STRING) AS interaction_app
   , CAST(NULL AS STRING) AS interaction_language
   , CASE WHEN is_collect THEN
       CASE WHEN COALESCE(CAST(poa.amount AS BIGNUMERIC), 0) > 0 THEN  'PAID COLLECT' ELSE 'FREE COLLECT' END
-    END AS publication_type
+    END AS interaction_type
   , pc.amount_USD
 FROM `lens-public-data.v2_polygon.publication_open_action_module_acted_record` pom
 LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
@@ -224,11 +233,11 @@ SELECT
   , pc.profile_id
   , CAST(TIMESTAMP_MICROS(pc.collect_date) AS DATE) AS interaction_date
   , CAST(TIMESTAMP_MICROS(pc.collect_date) AS TIME) AS interaction_time
-  , pc.profile_id_collected AS profile_id_interaction
-  , CAST(NULL AS STRING) AS publication_id_interaction
+  , pc.profile_id_collected AS interaction_profile_id
+  , CAST(NULL AS STRING) AS interaction_publication_id
   , CAST(NULL AS STRING) AS interaction_app
   , CAST(NULL AS STRING) AS interaction_language
-  , CASE WHEN COALESCE(amount, 0) > 0 THEN 'PAID COLLECT' ELSE 'FREE COLLECT' END AS publication_type
+  , CASE WHEN COALESCE(amount, 0) > 0 THEN 'PAID COLLECT' ELSE 'FREE COLLECT' END AS interaction_type
   , COALESCE(pc.amount, 0) * COAlESCE(ce.value, 1) AS amount_USD
 FROM intellilens.stage_v1_publication_collect  pc
 LEFT JOIN intellilens.stage_currency_exchange ce
@@ -242,11 +251,11 @@ SELECT
   , pr.profile_id
   , CAST(pre.action_at AS DATE) AS interaction_date
   , CAST(pre.action_at AS TIME) AS interaction_time
-  , pre.actioned_by_profile_id AS profile_id_interaction
-  , CAST(NULL AS STRING) AS publication_id_interaction
+  , pre.actioned_by_profile_id AS interaction_profile_id
+  , CAST(NULL AS STRING) AS interaction_publication_id
   , CAST(NULL AS STRING) AS interaction_app
   , CAST(NULL AS STRING) AS interaction_language
-  , pre.type AS publication_type
+  , pre.type AS interaction_type
   , 0 AS amount_USD
 FROM `lens-public-data.v2_polygon.publication_reaction` pre
 LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
@@ -259,11 +268,11 @@ SELECT
   , pme.profile_id
   , CAST(pme.timestamp AS DATE) AS interaction_date
   , CAST(pme.timestamp AS TIME) AS interaction_time
-  , pr.profile_id AS profile_id_interaction
-  , pme.publication_id AS publication_id_interaction
+  , pr.profile_id AS interaction_profile_id
+  , pme.publication_id AS interaction_publication_id
   , pr.app AS interaction_app
   , pm.language AS interaction_language
-  , 'MENTION' AS publication_type
+  , 'MENTION' AS interaction_type
   , 0 AS amount_USD
 FROM `lens-public-data.v2_polygon.publication_mention` pme
 LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
@@ -271,7 +280,6 @@ LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
 LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
   ON pm.publication_id = pr.publication_id
 )
-ORDER BY publication_id
 ;
 
 -- select *
