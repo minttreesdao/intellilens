@@ -58,6 +58,44 @@ LEFT JOIN (SELECT handle, owned_by, profile_id
 ORDER BY pp.block_timestamp DESC
 ;
 
+CREATE OR REPLACE TABLE intellilens.stage_currency_exchange AS
+SELECT 'WMATIC' AS currency, 0.8 AS value UNION ALL
+SELECT 'WETH' AS currency, 1939 AS value UNION ALL
+SELECT 'NCT' AS currency, 1.14 AS value UNION ALL
+SELECT 'USDC' AS currency, 1 AS value
+;
+
+CREATE OR REPLACE TABLE intellilens.stage_v2_publication_collect AS
+SELECT
+  publication_id
+, currency
+, amount
+, amount * COALESCE(ec.value, 1) AS amount_USD 
+, fiat_price_snapshot
+
+FROM(
+SELECT 
+    publication_id 
+  , CASE  WHEN prr.currency = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' THEN 'USDC' 
+          WHEN prr.currency = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' THEN 'WMATIC' 
+          WHEN prr.currency = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619' THEN 'WETH' 
+          WHEN prr.currency = '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063' THEN 'DAI' 
+          WHEN prr.currency = '0xD838290e877E0188a4A44700463419ED96c16107' THEN 'NCT' 
+          ELSE prr.currency END AS currency
+  , SUM(CASE  WHEN prr.currency = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000, 2)
+              WHEN prr.currency = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
+              WHEN prr.currency = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
+              WHEN prr.currency = '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
+              WHEN prr.currency = '0xD838290e877E0188a4A44700463419ED96c16107' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
+              ELSE CAST(prr.amount AS BIGNUMERIC) END) AS amount
+  , fiat_price_snapshot
+  FROM `lens-public-data.v2_polygon.publication_revenue_record` prr
+  GROUP BY publication_id, currency, fiat_price_snapshot
+) prr
+LEFT JOIN intellilens.stage_currency_exchange ce
+  ON ce.currency = prr.currency
+ ;
+
 ----------------------------------------------------------------------------------------
 ------------------------------------------ L2 ------------------------------------------
 ----------------------------------------------------------------------------------------
@@ -113,25 +151,7 @@ SELECT
 FROM `lens-public-data.v2_polygon.publication_record` pr
 LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
   ON pm.publication_id = pr.publication_id
-LEFT JOIN (
-  SELECT 
-    publication_id 
-  , CASE  WHEN prr.currency = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' THEN 'USDC' 
-          WHEN prr.currency = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' THEN 'WMATIC' 
-          WHEN prr.currency = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619' THEN 'WETH' 
-          WHEN prr.currency = '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063' THEN 'DAI' 
-          WHEN prr.currency = '0xD838290e877E0188a4A44700463419ED96c16107' THEN 'NCT' 
-          ELSE prr.currency END AS currency
-  , SUM(CASE  WHEN prr.currency = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000, 2)
-              WHEN prr.currency = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
-              WHEN prr.currency = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
-              WHEN prr.currency = '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
-              WHEN prr.currency = '0xD838290e877E0188a4A44700463419ED96c16107' THEN ROUND(CAST(prr.amount AS BIGNUMERIC) / 1000000000000000000, 2)
-              ELSE CAST(prr.amount AS BIGNUMERIC) END) AS amount
-  , fiat_price_snapshot
-  FROM `lens-public-data.v2_polygon.publication_revenue_record` prr
-  GROUP BY publication_id, currency, fiat_price_snapshot
-  ) prr
+LEFT JOIN intellilens.stage_v2_publication_collect prr
   ON prr.publication_id = pr.publication_id
 LEFT JOIN `lens-public-data.v2_polygon.global_stats_publication` gsp
   ON gsp.publication_id = pr.publication_id
@@ -143,21 +163,96 @@ ORDER BY pr.publication_id DESC, pr.block_timestamp DESC
 ;
 
 
-select publication_id, publication_revenue, publication_currency
-from intellilens.L2_publication 
-where publication_id in ('0x0f85-0x1d26', '0x019b72-0x0181', '0xb43c-0x0235')
+-- select publication_id, publication_revenue, publication_currency
+-- from intellilens.L2_publication 
+-- where publication_id in ('0x0f85-0x1d26', '0x019b72-0x0181', '0xb43c-0x0235')
+
+
 ------------------ interaction
+SELECT *
+FROM
+(
+SELECT
+  prp.publication_id
+, prp.profile_id
+, CAST(pr.block_timestamp AS DATE) AS interaction_date
+, CAST(pr.block_timestamp AS TIME) AS interaction_time
+, pr.profile_id AS profile_id_interaction
+, pr.publication_id AS publication_id_interaction
+, pr.app AS interaction_app
+, pm.language AS interaction_language
+, pr.publication_type
+, 0 AS amount_USD
+FROM `lens-public-data.v2_polygon.publication_record` pr
+LEFT JOIN `lens-public-data.v2_polygon.publication_metadata` pm
+  ON pm.publication_id = pr.publication_id
+LEFT JOIN `lens-public-data.v2_polygon.publication_record` prp
+  ON prp.publication_id = pr.parent_publication_id
+WHERE pr.parent_publication_id IS NOT NULL
+and pr.parent_publication_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408')
+
+UNION ALL
+
+-- collect v2
+SELECT   
+    pom.publication_id
+  , pr.profile_id
+  , CAST(pom.block_timestamp AS DATE) AS interaction_date
+  , CAST(pom.block_timestamp AS TIME) AS interaction_time
+  , acted_profile_id AS profile_id_interaction
+  , CAST(NULL AS STRING) AS publication_id_interaction
+  , CAST(NULL AS STRING) AS interaction_app
+  , CAST(NULL AS STRING) AS interaction_language
+  , CASE WHEN is_collect THEN
+      CASE WHEN COALESCE(CAST(poa.amount AS BIGNUMERIC), 0) > 0 THEN  'PAID COLLECT' ELSE 'FREE COLLECT' END
+    END AS publication_type
+  , pc.amount_USD
+FROM `lens-public-data.v2_polygon.publication_open_action_module_acted_record` pom
+LEFT JOIN `lens-public-data.v2_polygon.publication_record` pr
+  ON pom.publication_id = pr.publication_id
+LEFT JOIN `lens-public-data.v2_polygon.publication_open_action_module` poa
+  ON poa.publication_id = pom.publication_id
+LEFT JOIN intellilens.stage_v2_publication_collect pc
+  ON pc.publication_id = pom.publication_id
+
+where pom.publication_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408', '0x0f85-0x1dc2')
+
+UNION ALL
+
+-- collect v1
+SELECT   
+    pc.post_id AS publication_id
+  , pc.profile_id
+  , CAST(TIMESTAMP_MICROS(pc.collect_date) AS DATE) AS interaction_date
+  , CAST(TIMESTAMP_MICROS(pc.collect_date) AS TIME) AS interaction_time
+  , pc.profile_id_collected AS profile_id_interaction
+  , CAST(NULL AS STRING) AS publication_id_interaction
+  , CAST(NULL AS STRING) AS interaction_app
+  , CAST(NULL AS STRING) AS interaction_language
+  , CASE WHEN COALESCE(amount, 0) > 0 THEN 'PAID COLLECT' ELSE 'FREE COLLECT' END AS publication_type
+  , pc.amount * COAlESCE(ce.value, 1) AS amount_USD
+FROM intellilens.stage_v1_publication_collect  pc
+LEFT JOIN intellilens.stage_currency_exchange ce
+  ON ce.currency = pc.currency
+WHERE pc.collect_date IS NOT NULL
+and post_id in ('0x0f85-0x1d26', '0x0f85-0x1cf5-DA-02cb1b84', '0x0f85-0x1dc7-DA-7600e408', '0x0f85-0x1dc2')
+)
+ORDER BY publication_id
+;
 
 
+, cmd.referral_fee AS referral_fee_pct
+, cr.referral_id 
+
++ like 
++ referrer
 
 
+publication_mention
+'0x0f85-0x1dc1-DA-3c259bd2'
 
-
-
-
-
-
-
+referrer_profile_id
+publication_referrer
 
 ------------------ handle_history
 SELECT 
