@@ -25,6 +25,7 @@ SELECT
 , total_acted AS profile_acted
 , total_followers AS profile_followers
 , total_following AS profile_following
+, qp.score
 FROM `lens-public-data.v2_polygon.profile_record` pr
 LEFT JOIN (SELECT *
   FROM (SELECT pm.name, pm.profile_id, ROW_NUMBER() OVER(PARTITION BY pm.profile_id ORDER BY pm.block_timestamp DESC) AS rn
@@ -38,8 +39,10 @@ LEFT JOIN `lens-public-data.v2_polygon.global_stats_profile` gsp
   ON gsp.profile_id = pr.profile_id
 LEFT JOIN `lens-public-data.v2_polygon.global_stats_profile_follower` gspf
    ON gspf.profile_id = pr.profile_id
+LEFT JOIN `lens-public-data.v2_polygon.machine_learning_quality_profiles` qp
+   ON qp.profile_id = pr.profile_id
 GROUP BY pr.profile_id, pm.name, pr.owned_by, pr.is_burnt, total_posts, total_comments, total_mirrors, total_quotes, total_publications, total_reacted
-, total_reactions, total_collects, total_acted, total_followers, total_following, CAST(pr.block_timestamp AS DATE)
+, total_reactions, total_collects, total_acted, total_followers, total_following, CAST(pr.block_timestamp AS DATE), qp.score
 ;
 
 
