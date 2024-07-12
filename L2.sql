@@ -184,7 +184,7 @@ SELECT
   , CAST(pre.action_at AS TIME) AS interaction_time
   , pre.actioned_by_profile_id AS interaction_profile_id
   , CAST(NULL AS STRING) AS interaction_publication_id
-  , CAST(NULL AS STRING) AS interaction_app
+  , pre.app AS interaction_app
   , CAST(NULL AS STRING) AS interaction_language
   , pre.type AS interaction_type
   , 0 AS amount_USD
