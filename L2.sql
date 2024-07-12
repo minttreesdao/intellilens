@@ -11,8 +11,8 @@ SELECT
 , pm.name AS profile_name
 , pr.owned_by AS profile_address
 , pr.is_burnt AS profile_burnt_flag
-, CAST(pl.last_logged_in AS DATE) AS profile_last_logged_in_date
-, CAST(pl.last_logged_in AS TIME) AS profile_last_logged_in_time
+, CAST(MAX(pl.last_logged_in) AS DATE) AS profile_last_logged_in_date
+, CAST(MAX(pl.last_logged_in) AS TIME) AS profile_last_logged_in_time
 , CAST(pr.block_timestamp AS DATE) AS profile_creation_date
 , total_posts AS profile_posts
 , total_comments AS profile_comments
@@ -26,7 +26,11 @@ SELECT
 , total_followers AS profile_followers
 , total_following AS profile_following
 FROM `lens-public-data.v2_polygon.profile_record` pr
-LEFT JOIN `lens-public-data.v2_polygon.profile_metadata` pm
+LEFT JOIN (SELECT *
+  FROM (SELECT pm.name, pm.profile_id, ROW_NUMBER() OVER(PARTITION BY pm.profile_id ORDER BY pm.block_timestamp DESC) AS rn
+    FROM `lens-public-data.v2_polygon.profile_metadata` pm)
+  WHERE rn = 1
+) pm
   ON pr.profile_id = pm.profile_id
 LEFT JOIN `lens-public-data.v2_polygon.profile_last_logged_in` pl
   ON pl.profile_id = pr.profile_id
@@ -34,6 +38,8 @@ LEFT JOIN `lens-public-data.v2_polygon.global_stats_profile` gsp
   ON gsp.profile_id = pr.profile_id
 LEFT JOIN `lens-public-data.v2_polygon.global_stats_profile_follower` gspf
    ON gspf.profile_id = pr.profile_id
+GROUP BY pr.profile_id, pm.name, pr.owned_by, pr.is_burnt, total_posts, total_comments, total_mirrors, total_quotes, total_publications, total_reacted
+, total_reactions, total_collects, total_acted, total_followers, total_following, CAST(pr.block_timestamp AS DATE)
 ;
 
 
